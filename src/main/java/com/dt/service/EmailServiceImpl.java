@@ -1,14 +1,21 @@
 package com.dt.service;
 
+
+
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.mail.javamail.JavaMailSender;
-import org.springframework.mail.javamail.MimeMessageHelper;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.RestTemplate;
 import org.thymeleaf.TemplateEngine;
 import org.thymeleaf.context.Context;
-
-import jakarta.mail.internet.MimeMessage;
 
 @Service
 public class EmailServiceImpl implements EmailService {
@@ -17,54 +24,81 @@ public class EmailServiceImpl implements EmailService {
 	private TemplateEngine templateEngine;
 	
 
-    private final JavaMailSender mailSender;
-
-    public EmailServiceImpl(JavaMailSender mailSender) {
-        this.mailSender = mailSender;
-    }
+	@Value("${brevo.api.key}")
+    private String brevoApiKey;
+	
+	 private final RestTemplate restTemplate = new RestTemplate();
+	 
+	
+//    private final JavaMailSender mailSender;
+//
+//    public EmailServiceImpl(JavaMailSender mailSender) {
+//        this.mailSender = mailSender;
+//    }
     
-    @Async
-    public void sendCampaignEmail(
-            String toEmail,
-            String firstName,
-            String campaignName,
-            String status,
-            Integer campaignId,
-            String type) {
+	 @Async
+	 public void sendCampaignEmail(
+	         String toEmail,
+	         String firstName,
+	         String campaignName,
+	         String status,
+	         Integer campaignId,
+	         String type) {
 
-        try {
+	     try {
 
-            Context context = new Context();
-            context.setVariable("firstName", firstName);
-            context.setVariable("campaignName", campaignName);
-            context.setVariable("status", status);
-            context.setVariable("type", type);
-            context.setVariable("campaignUrl",
-                    "http://localhost:5173/layout/campaign-details/" + campaignId);
+	         // 1️⃣ Prepare Thymeleaf HTML
+	         Context context = new Context();
+	         context.setVariable("firstName", firstName);
+	         context.setVariable("campaignName", campaignName);
+	         context.setVariable("status", status);
+	         context.setVariable("type", type);
+	         context.setVariable("campaignUrl",
+	                 "https://distinctcampaign.vercel.app/layout/campaign-details/" + campaignId);
 
-            String htmlContent = templateEngine.process(
-                    "email/campaign-assigned",
-                    context);
+	         String htmlContent = templateEngine.process(
+	                 "email/campaign-assigned",
+	                 context);
 
-            MimeMessage message = mailSender.createMimeMessage();
-            MimeMessageHelper helper = new MimeMessageHelper(message, true);
+	         String subject = type.equals("ASSIGNED")
+	                 ? "New Campaign Has Been Assigned"
+	                 : "Campaign Status Updated";
 
-            helper.setTo(toEmail);
+	         // 2️⃣ Create Request Body using Map (SAFE JSON)
+	         Map<String, Object> requestBody = new HashMap<>();
 
-            if (type.equals("ASSIGNED")) {
-                helper.setSubject("New Campaign Have Been Assigned");
-            } else {
-                helper.setSubject("Campaign Status Updated");
-            }
+	         Map<String, String> sender = new HashMap<>();
+	         sender.put("email", "mustakims2103@gmail.com");
 
-            helper.setText(htmlContent, true);
+	         Map<String, String> to = new HashMap<>();
+	         to.put("email", toEmail);
 
-            mailSender.send(message);
+	         requestBody.put("sender", sender);
+	         requestBody.put("to", List.of(to));
+	         requestBody.put("subject", subject);
+	         requestBody.put("htmlContent", htmlContent);
 
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-    }
+	         // 3️⃣ Headers
+	         HttpHeaders headers = new HttpHeaders();
+	         headers.setContentType(MediaType.APPLICATION_JSON);
+	         headers.set("api-key", brevoApiKey);
+
+	         HttpEntity<Map<String, Object>> entity =
+	                 new HttpEntity<>(requestBody, headers);
+
+	         // 4️⃣ Send
+	         restTemplate.postForObject(
+	                 "https://api.brevo.com/v3/smtp/email",
+	                 entity,
+	                 String.class
+	         );
+
+	         System.out.println("Email Sent Successfully ✅");
+
+	     } catch (Exception e) {
+	         e.printStackTrace();
+	     }
+	 }
     
     
     
